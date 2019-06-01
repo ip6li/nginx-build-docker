@@ -1,0 +1,130 @@
+#!/bin/sh
+
+#################################################################################
+# Build script for Nginx with TLSv1.3 support
+# Copyright 2017 by Christian Felsing <support@ip6.li>
+#################################################################################
+
+failed() {
+	echo "$@ failed"
+	exit 1
+}
+
+
+NGINX_DIR="nginx"
+NGINX_LOGDIR="/var/log/nginx"
+NGINX_RUNDIR="/var/run/nginx"
+NGINX_USER=nginx
+NGINX_GROUP=nginx
+
+OPENSSL_DIR="openssl"
+
+if [ ! -d "${OPENSSL_DIR}" ]; then
+  git clone https://github.com/openssl/openssl.git "${OPENSSL_DIR}"
+  cd "${OPENSSL_DIR}" || failed
+  git checkout OpenSSL_1_1_1-stable || failed # Draft ?
+  cd ..
+fi
+
+if [ ! -d "${NGINX_DIR}" ]; then
+  git clone --depth 10 https://github.com/nginx/nginx.git
+fi
+
+addgroup -g 82 -S nginx
+adduser -u 82 -D -S -G nginx nginx
+
+# OpenSSL aktualisieren
+cd "${OPENSSL_DIR}" || failed
+git pull
+cd ..
+
+# luajit2
+if [ ! -d luajit2 ]; then
+  git clone https://github.com/openresty/luajit2.git luajit2
+fi
+cd luajit2 || failed
+git pull
+make && make install
+cd ..
+
+# Nginx erstellen
+cd "${NGINX_DIR}" || failed
+git pull
+
+# Brotli
+if [ ! -d ngx_brotli ]; then
+  git clone https://github.com/google/ngx_brotli ngx_brotli
+fi
+cd ngx_brotli || failed
+git pull && git submodule update --init 
+cd ..
+
+# AJP
+if [ ! -d nginx_ajp_module ]; then
+  git clone https://github.com/yaoweibin/nginx_ajp_module.git nginx_ajp_module
+fi
+cd nginx_ajp_module || failed
+git pull
+cd ..
+
+# ngx_devel_kit
+if [ ! -d ngx_devel_kit ]; then
+  git clone https://github.com/simplresty/ngx_devel_kit.git ngx_devel_kit
+fi
+cd ngx_devel_kit || failed
+git pull
+cd ..
+
+# lua-nginx-module
+if [ ! -d lua-nginx-module ]; then
+  git clone https://github.com/openresty/lua-nginx-module.git lua-nginx-module
+fi
+cd lua-nginx-module || failed
+git pull
+cd ..
+
+HERE=$(pwd)
+export LUAJIT_LIB=/usr/local/lib
+export LUAJIT_INC=/usr/local/include/luajit-2.1
+
+auto/configure \
+  --with-openssl=/usr/src/${OPENSSL_DIR} \
+  --with-http_ssl_module \
+  --with-http_v2_module \
+  --with-file-aio \
+  --with-threads \
+  --with-http_realip_module \
+  --with-http_geoip_module \
+  --with-http_stub_status_module \
+  --http-log-path=${NGINX_LOGDIR}/access.log \
+  --error-log-path=${NGINX_LOGDIR}/error.log \
+  --pid-path=${NGINX_RUNDIR}/nginx.pid \
+  --lock-path=${NGINX_RUNDIR}/nginx.lock \
+  --user=$NGINX_USER \
+  --group=$NGINX_GROUP \
+  --with-openssl-opt="no-weak-ssl-ciphers enable-tls1_3" \
+  --with-cc-opt="-g -O2 -fPIE -fPIC -fstack-protector-all -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security" \
+  --with-ld-opt="-Wl,-Bsymbolic-functions -Wl,-z,relro" \
+  --add-module=nginx_ajp_module \
+  --add-dynamic-module=ngx_brotli \
+  --add-dynamic-module=ngx_devel_kit \
+  --add-dynamic-module=lua-nginx-module \
+  || failed
+
+CORES=$(cat /proc/cpuinfo |grep processor|wc -l)
+if [ ! -z "$CORES" ]; then
+  THREADS="-j $CORES"
+fi
+make $THREADS || failed
+
+make install || failed
+
+if [ ! -d "${NGINX_LOGDIR}" ]; then
+  mkdir "${NGINX_LOGDIR}"
+fi
+if [ ! -d "${NGINX_RUNDIR}" ]; then
+  mkdir "${NGINX_RUNDIR}"
+fi
+
+echo "success"
+

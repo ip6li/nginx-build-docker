@@ -1,0 +1,29 @@
+version: '3.7'
+#version: '2.1'
+
+networks:
+  back:
+    external:
+      name: dmz_bridge
+
+services:
+  nginx:
+    build:
+      context: .
+    volumes:
+      - ./conf:/usr/local/nginx/conf
+    networks:
+      back:
+        ipv4_address: 172.16.238.17
+        ipv6_address: 2a01:4f8:a0:5448:238::17
+    dns:
+      - 172.16.238.1
+    logging:
+      driver: json-file
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "/usr/bin/curl --silent -f http://172.16.238.17:80 > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
