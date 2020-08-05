@@ -1,4 +1,4 @@
-FROM alpine:3.7
+FROM alpine:latest
 
 RUN apk add --no-cache \
         ca-certificates \
@@ -31,7 +31,7 @@ RUN set -x && \
         linux-headers \
         gperf \
         pcre-dev \
-        python \
+        python3 \
         zlib-dev
 
 add build-nginx /usr/src/build-nginx
@@ -42,7 +42,6 @@ run cd /usr/src && ./build-nginx
 run apk del .build-deps && \
         rm -rf /tmp/*
 
-#EXPOSE 80 443
-
-CMD ["/usr/local/nginx/sbin/nginx", "-g", "daemon off;"]
+#CMD ["/usr/local/nginx/sbin/nginx", "-g", "daemon off;"]
+CMD ["bash", "-c", "touch /tmp/xxx; tail -f /tmp/xxx" ]
 
